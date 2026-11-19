@@ -1,0 +1,6 @@
+{
+  "name": "Vega Asistan",
+  "description": "Öğrenen yüz tanıma, gerçek zamanlı sesli sohbet ve Google Workspace otomasyonuna sahip akıllı sesli asistan.",
+  "requestFramePermissions": ["microphone", "camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

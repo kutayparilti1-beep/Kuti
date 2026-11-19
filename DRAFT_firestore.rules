@@ -1,0 +1,328 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Reusable Security Primitives ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isVerifiedOwner(userId) {
+      return isVerifiedUser() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isVerifiedUser() && request.auth.token.email == 'kutayparilti1@gmail.com';
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Validation Blueprints ---
+    function isValidUserRegistryEntry(data, userId) {
+      return data.keys().hasAll(['uid', 'email', 'createdAt', 'lastSeenAt'])
+        && data.keys().hasOnly(['uid', 'email', 'createdAt', 'lastSeenAt'])
+        && data.uid is string
+        && data.uid == userId
+        && data.uid == request.auth.uid
+        && isValidId(data.uid)
+        && data.email is string
+        && data.email.size() >= 3
+        && data.email.size() <= 254
+        && data.email == request.auth.token.email
+        && data.createdAt is timestamp
+        && data.lastSeenAt is timestamp;
+    }
+
+    function isValidKnownFace(data, userId, faceId) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'name', 'relation', 'visualSignature',
+          'facialTraits', 'learnedNotes', 'recognitionCount', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerId', 'name', 'relation', 'visualSignature',
+          'facialTraits', 'learnedNotes', 'recognitionCount', 'createdAt', 'updatedAt'
+        ])
+        && data.id is string
+        && data.id == faceId
+        && isValidId(data.id)
+        && data.ownerId is string
+        && data.ownerId == userId
+        && data.ownerId == request.auth.uid
+        && data.name is string
+        && data.name.size() >= 1
+        && data.name.size() <= 80
+        && data.relation is string
+        && data.relation.size() <= 120
+        && data.visualSignature is string
+        && data.visualSignature.size() >= 10
+        && data.visualSignature.size() <= 1500
+        && data.facialTraits is list
+        && data.facialTraits.size() <= 12
+        && (data.facialTraits.size() == 0 || (data.facialTraits[0] is string && data.facialTraits[0].size() <= 80))
+        && data.learnedNotes is string
+        && data.learnedNotes.size() <= 1000
+        && data.recognitionCount is int
+        && data.recognitionCount >= 0
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidLearnedMemory(data, userId, memoryId) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'category', 'subject', 'content', 'source', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerId', 'category', 'subject', 'content', 'source', 'createdAt', 'updatedAt'
+        ])
+        && data.id is string
+        && data.id == memoryId
+        && isValidId(data.id)
+        && data.ownerId is string
+        && data.ownerId == userId
+        && data.ownerId == request.auth.uid
+        && data.category in ['preference', 'person_fact', 'routine', 'instruction', 'workspace_note']
+        && data.subject is string
+        && data.subject.size() >= 1
+        && data.subject.size() <= 120
+        && data.content is string
+        && data.content.size() >= 1
+        && data.content.size() <= 1000
+        && data.source in ['voice', 'vision', 'workspace']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAssistantTask(data, userId, taskId) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'title', 'summary', 'category', 'status', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerId', 'title', 'summary', 'category', 'status', 'createdAt', 'updatedAt'
+        ])
+        && data.id is string
+        && data.id == taskId
+        && isValidId(data.id)
+        && data.ownerId is string
+        && data.ownerId == userId
+        && data.ownerId == request.auth.uid
+        && data.title is string
+        && data.title.size() >= 1
+        && data.title.size() <= 160
+        && data.summary is string
+        && data.summary.size() >= 1
+        && data.summary.size() <= 4000
+        && data.category in ['briefing', 'email', 'calendar', 'drive', 'analysis']
+        && data.status in ['pending', 'completed']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidUserNotification(data, userId, notificationId) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'title', 'body', 'source', 'read', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerId', 'title', 'body', 'source', 'read', 'createdAt'
+        ])
+        && data.id is string
+        && data.id == notificationId
+        && isValidId(data.id)
+        && data.ownerId is string
+        && data.ownerId == userId
+        && data.ownerId == request.auth.uid
+        && data.title is string
+        && data.title.size() >= 1
+        && data.title.size() <= 120
+        && data.body is string
+        && data.body.size() >= 1
+        && data.body.size() <= 500
+        && data.source in ['voice', 'gmail', 'calendar', 'system']
+        && data.read is bool
+        && data.createdAt is timestamp;
+    }
+
+    function isValidChatMessage(data, userId, messageId) {
+      return data.keys().hasAll([
+          'id', 'ownerId', 'role', 'botRole', 'text', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerId', 'role', 'botRole', 'text', 'createdAt'
+        ])
+        && data.id is string
+        && data.id == messageId
+        && isValidId(data.id)
+        && data.ownerId is string
+        && data.ownerId == userId
+        && data.ownerId == request.auth.uid
+        && data.role in ['user', 'model']
+        && data.botRole in ['general', 'deep_reasoning', 'architect', 'fast']
+        && data.text is string
+        && data.text.size() >= 1
+        && data.text.size() <= 12000
+        && data.createdAt is timestamp;
+    }
+
+    // --- Collection Rules ---
+
+    // 1. User Registry (Admin lists emails only; owner can read/register own entry)
+    match /user_registry/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(userId)
+        && isVerifiedOwner(userId)
+        && isValidUserRegistryEntry(incoming(), userId)
+        && incoming().createdAt == request.time
+        && incoming().lastSeenAt == request.time;
+      allow update: if isValidId(userId)
+        && isVerifiedOwner(userId)
+        && isValidUserRegistryEntry(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().email == existing().email
+        && incoming().createdAt == existing().createdAt
+        && incoming().lastSeenAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['lastSeenAt']);
+      allow delete: if false;
+    }
+
+    // 2. Known Faces
+    match /users/{userId}/known_faces/{faceId} {
+      allow get: if isValidId(userId) && isValidId(faceId) && isOwner(userId);
+      allow list: if isOwner(userId) && resource.data.ownerId == request.auth.uid;
+      allow create: if isValidId(userId)
+        && isValidId(faceId)
+        && isVerifiedOwner(userId)
+        && isValidKnownFace(incoming(), userId, faceId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(userId)
+        && isValidId(faceId)
+        && isVerifiedOwner(userId)
+        && isValidKnownFace(incoming(), userId, faceId)
+        && incoming().id == existing().id
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Action: Update learned profile details or visual signature
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'relation', 'visualSignature', 'facialTraits', 'learnedNotes', 'updatedAt'
+          ]) ||
+          // Action: Record recognition event
+          (
+            incoming().diff(existing()).affectedKeys().hasOnly(['recognitionCount', 'updatedAt'])
+            && incoming().recognitionCount == existing().recognitionCount + 1
+          )
+        );
+      allow delete: if isValidId(userId) && isValidId(faceId) && isVerifiedOwner(userId);
+    }
+
+    // 3. Learned Memories
+    match /users/{userId}/memories/{memoryId} {
+      allow get: if isValidId(userId) && isValidId(memoryId) && isOwner(userId);
+      allow list: if isOwner(userId) && resource.data.ownerId == request.auth.uid;
+      allow create: if isValidId(userId)
+        && isValidId(memoryId)
+        && isVerifiedOwner(userId)
+        && isValidLearnedMemory(incoming(), userId, memoryId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(userId)
+        && isValidId(memoryId)
+        && isVerifiedOwner(userId)
+        && isValidLearnedMemory(incoming(), userId, memoryId)
+        && incoming().id == existing().id
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'category', 'subject', 'content', 'updatedAt'
+        ]);
+      allow delete: if isValidId(userId) && isValidId(memoryId) && isVerifiedOwner(userId);
+    }
+
+    // 4. Assistant Tasks & Briefings
+    match /users/{userId}/tasks/{taskId} {
+      allow get: if isValidId(userId) && isValidId(taskId) && isOwner(userId);
+      allow list: if isOwner(userId) && resource.data.ownerId == request.auth.uid;
+      allow create: if isValidId(userId)
+        && isValidId(taskId)
+        && isVerifiedOwner(userId)
+        && isValidAssistantTask(incoming(), userId, taskId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(userId)
+        && isValidId(taskId)
+        && isVerifiedOwner(userId)
+        && isValidAssistantTask(incoming(), userId, taskId)
+        && incoming().id == existing().id
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (
+            existing().status == 'pending'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(userId) && isValidId(taskId) && isVerifiedOwner(userId);
+    }
+
+    // 5. User Notifications
+    match /users/{userId}/notifications/{notificationId} {
+      allow get: if isValidId(userId) && isValidId(notificationId) && isOwner(userId);
+      allow list: if isOwner(userId) && resource.data.ownerId == request.auth.uid;
+      allow create: if isValidId(userId)
+        && isValidId(notificationId)
+        && isVerifiedOwner(userId)
+        && isValidUserNotification(incoming(), userId, notificationId)
+        && incoming().createdAt == request.time;
+      allow update: if isValidId(userId)
+        && isValidId(notificationId)
+        && isVerifiedOwner(userId)
+        && isValidUserNotification(incoming(), userId, notificationId)
+        && incoming().id == existing().id
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly(['read']);
+      allow delete: if isValidId(userId) && isValidId(notificationId) && isVerifiedOwner(userId);
+    }
+
+    // 6. Multi-Turn Chat Messages
+    match /users/{userId}/chat_messages/{messageId} {
+      allow get: if isValidId(userId) && isValidId(messageId) && isOwner(userId);
+      allow list: if isOwner(userId) && resource.data.ownerId == request.auth.uid;
+      allow create: if isValidId(userId)
+        && isValidId(messageId)
+        && isVerifiedOwner(userId)
+        && isValidChatMessage(incoming(), userId, messageId)
+        && incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isValidId(userId) && isValidId(messageId) && isVerifiedOwner(userId);
+    }
+  }
+}
